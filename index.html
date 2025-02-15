@@ -153,7 +153,7 @@
         });
       }
 
-      // 画像の追加
+      // 画像の追加（追加後に生成された ID を返す）
       function addImage(imageData, name) {
         return new Promise((resolve, reject) => {
           const transaction = db.transaction([storeName], "readwrite");
@@ -161,7 +161,8 @@
           const image = { src: imageData, name: name, deleted: false };
           const request = store.add(image);
           request.onsuccess = function () {
-            resolve();
+            // 生成された ID を返す
+            resolve(request.result);
           };
           request.onerror = function (e) {
             reject(e);
@@ -169,7 +170,7 @@
         });
       }
 
-      // 画像の取得（削除フラグがfalseのもの）
+      // 画像の取得（削除フラグが false のもの）
       function getImages() {
         return new Promise((resolve, reject) => {
           const transaction = db.transaction([storeName], "readonly");
@@ -267,10 +268,10 @@
             if (file.type.startsWith("image/")) {
               const reader = new FileReader();
               reader.onload = function (event) {
-                // 画像をDBに保存
-                addImage(event.target.result, "無題").then(() => {
-                  // 保存後に表示更新（DBから再取得してもよい）
-                  displayImage(event.target.result, "無題");
+                // 画像をDBに保存し、生成された ID を取得
+                addImage(event.target.result, "無題").then((id) => {
+                  // 保存後、ID を渡して表示する
+                  displayImage(event.target.result, "無題", id);
                 });
               };
               reader.readAsDataURL(file);
