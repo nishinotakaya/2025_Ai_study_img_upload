@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像アップロードシステム</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+      }
+      .header {
+        background-color: #d35400;
+        color: white;
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: bold;
+      }
+      .nav-links {
+        display: flex;
+        gap: 20px;
+      }
+      .nav-links a {
+        color: white;
+        text-decoration: none;
+        font-size: 18px;
+      }
+      .section-title-container {
+        width: 100%;
+        border-bottom: 3px solid #d35400;
+        padding: 10px 20px;
+      }
+      .section-title {
+        font-size: 22px;
+        font-weight: bold;
+        margin: 0;
+      }
+      .upload-container {
+        text-align: center;
+        margin: 20px;
+      }
+      .upload-btn {
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #d35400;
+        color: white;
+        border: none;
+        cursor: pointer;
+        border-radius: 5px;
+      }
+      #fileInput {
+        display: none;
+      }
+      .drop-zone {
+        border: 2px dashed #d35400;
+        padding: 30px;
+        text-align: center;
+        margin: 20px auto;
+        width: 50%;
+        cursor: pointer;
+      }
+      .image-container {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .image-box {
+        position: relative;
+        text-align: center;
+        width: 220px;
+      }
+      .image-box img {
+        width: 100%;
+        border-radius: 5px;
+      }
+      .image-box input {
+        width: 90%;
+        text-align: center;
+        margin-top: 5px;
+      }
+      .delete-btn {
+        background-color: red;
+        color: white;
+        border: none;
+        cursor: pointer;
+        padding: 5px;
+        border-radius: 5px;
+        margin-top: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <h1>画像アップロードシステム</h1>
+      <nav class="nav-links">
+        <a href="#">画像一覧</a>
+        <a href="#">ログイン</a>
+      </nav>
+    </header>
+
+    <div class="section-title-container">
+      <h2 class="section-title">画像一覧</h2>
+    </div>
+
+    <div class="upload-container">
+      <button class="upload-btn" onclick="document.getElementById('fileInput').click();">画像をアップロード</button>
+      <input type="file" id="fileInput" accept="image/*" multiple>
+      <div class="drop-zone" id="dropZone">ここに画像をドラッグ＆ドロップ</div>
+    </div>
+
+    <div class="image-container" id="imageContainer"></div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        loadImages();
+
+        const fileInput = document.getElementById("fileInput");
+        const imageContainer = document.getElementById("imageContainer");
+        const dropZone = document.getElementById("dropZone");
+
+        fileInput.addEventListener("change", function (event) {
+          handleFiles(event.target.files);
+        });
+
+        dropZone.addEventListener("dragover", function (event) {
+          event.preventDefault();
+          dropZone.style.backgroundColor = "#fbe3d3";
+        });
+
+        dropZone.addEventListener("dragleave", function () {
+          dropZone.style.backgroundColor = "white";
+        });
+
+        dropZone.addEventListener("drop", function (event) {
+          event.preventDefault();
+          dropZone.style.backgroundColor = "white";
+          handleFiles(event.dataTransfer.files);
+        });
+
+        function handleFiles(files) {
+          for (let file of files) {
+            if (file.type.startsWith("image/")) {
+              const reader = new FileReader();
+              reader.onload = function (event) {
+                saveImage(event.target.result, "無題");
+                displayImage(event.target.result, "無題");
+              };
+              reader.readAsDataURL(file);
+            }
+          }
+        }
+
+        function saveImage(imageData, name) {
+          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
+          images.push({ src: imageData, name: name, deleted: false });
+          localStorage.setItem("uploadedImages", JSON.stringify(images));
+        }
+
+        function loadImages() {
+          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
+          images.forEach(image => {
+            if (!image.deleted) {
+              displayImage(image.src, image.name);
+            }
+          });
+        }
+
+        function displayImage(imageData, imageName) {
+          const imageBox = document.createElement("div");
+          imageBox.classList.add("image-box");
+
+          const img = document.createElement("img");
+          img.src = imageData;
+
+          const input = document.createElement("input");
+          input.type = "text";
+          input.value = imageName;
+          input.addEventListener("change", function () {
+            updateImageName(imageData, input.value);
+          });
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.innerText = "削除";
+          deleteBtn.classList.add("delete-btn");
+          deleteBtn.addEventListener("click", function () {
+            if (confirm("本当に削除しますか？")) {
+              logicalDeleteImage(imageData, imageBox);
+            }
+          });
+
+          imageBox.appendChild(img);
+          imageBox.appendChild(input);
+          imageBox.appendChild(deleteBtn);
+          imageContainer.appendChild(imageBox);
+        }
+
+        function updateImageName(imageData, newName) {
+          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
+          images = images.map(image =>
+            image.src === imageData ? { ...image, name: newName } : image
+          );
+          localStorage.setItem("uploadedImages", JSON.stringify(images));
+        }
+
+        function logicalDeleteImage(imageData, imageBox) {
+          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
+          images = images.map(image =>
+            image.src === imageData ? { ...image, deleted: true } : image
+          );
+          localStorage.setItem("uploadedImages", JSON.stringify(images));
+          imageBox.remove();
+        }
+      });
+    </script>
+  </body>
+</html>
