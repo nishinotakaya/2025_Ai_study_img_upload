@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>画像アップロードシステム</title>
-    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>画像アップロードシステム (IndexedDB版)</title>
+    <link rel="stylesheet" href="style.css" />
     <style>
+      /* ※ ここにスタイル（以前と同じ内容）を記述 */
       body {
         margin: 0;
         font-family: Arial, sans-serif;
@@ -112,15 +113,130 @@
     </div>
 
     <div class="upload-container">
-      <button class="upload-btn" onclick="document.getElementById('fileInput').click();">画像をアップロード</button>
-      <input type="file" id="fileInput" accept="image/*" multiple>
+      <button class="upload-btn" onclick="document.getElementById('fileInput').click();">
+        画像をアップロード
+      </button>
+      <input type="file" id="fileInput" accept="image/*" multiple />
       <div class="drop-zone" id="dropZone">ここに画像をドラッグ＆ドロップ</div>
     </div>
 
     <div class="image-container" id="imageContainer"></div>
 
     <script>
-      document.addEventListener("DOMContentLoaded", function () {
+      // IndexedDBの設定
+      let db;
+      const dbName = "ImageDatabase";
+      const storeName = "images";
+
+      function openDatabase() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(dbName, 1);
+          request.onupgradeneeded = function (e) {
+            db = e.target.result;
+            // keyPath を autoIncrement する設定でオブジェクトストアを作成
+            if (!db.objectStoreNames.contains(storeName)) {
+              const objectStore = db.createObjectStore(storeName, {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+              // インデックスを作成（必要に応じて）
+              objectStore.createIndex("deleted", "deleted", { unique: false });
+            }
+          };
+          request.onsuccess = function (e) {
+            db = e.target.result;
+            resolve();
+          };
+          request.onerror = function (e) {
+            reject(e);
+          };
+        });
+      }
+
+      // 画像の追加
+      function addImage(imageData, name) {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([storeName], "readwrite");
+          const store = transaction.objectStore(storeName);
+          const image = { src: imageData, name: name, deleted: false };
+          const request = store.add(image);
+          request.onsuccess = function () {
+            resolve();
+          };
+          request.onerror = function (e) {
+            reject(e);
+          };
+        });
+      }
+
+      // 画像の取得（削除フラグがfalseのもの）
+      function getImages() {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([storeName], "readonly");
+          const store = transaction.objectStore(storeName);
+          const images = [];
+          store.openCursor().onsuccess = function (event) {
+            const cursor = event.target.result;
+            if (cursor) {
+              if (!cursor.value.deleted) {
+                images.push(cursor.value);
+              }
+              cursor.continue();
+            } else {
+              resolve(images);
+            }
+          };
+          transaction.onerror = function (e) {
+            reject(e);
+          };
+        });
+      }
+
+      // 画像の名前を更新
+      function updateImageNameInDB(id, newName) {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([storeName], "readwrite");
+          const store = transaction.objectStore(storeName);
+          const request = store.get(id);
+          request.onsuccess = function (e) {
+            const data = e.target.result;
+            if (data) {
+              data.name = newName;
+              const updateRequest = store.put(data);
+              updateRequest.onsuccess = () => resolve();
+              updateRequest.onerror = (err) => reject(err);
+            } else {
+              reject("Image not found");
+            }
+          };
+          request.onerror = (err) => reject(err);
+        });
+      }
+
+      // 論理削除
+      function logicalDeleteImageInDB(id) {
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([storeName], "readwrite");
+          const store = transaction.objectStore(storeName);
+          const request = store.get(id);
+          request.onsuccess = function (e) {
+            const data = e.target.result;
+            if (data) {
+              data.deleted = true;
+              const updateRequest = store.put(data);
+              updateRequest.onsuccess = () => resolve();
+              updateRequest.onerror = (err) => reject(err);
+            } else {
+              reject("Image not found");
+            }
+          };
+          request.onerror = (err) => reject(err);
+        });
+      }
+
+      // DOM操作とイベントの設定
+      document.addEventListener("DOMContentLoaded", async function () {
+        await openDatabase();
         loadImages();
 
         const fileInput = document.getElementById("fileInput");
@@ -151,30 +267,27 @@
             if (file.type.startsWith("image/")) {
               const reader = new FileReader();
               reader.onload = function (event) {
-                saveImage(event.target.result, "無題");
-                displayImage(event.target.result, "無題");
+                // 画像をDBに保存
+                addImage(event.target.result, "無題").then(() => {
+                  // 保存後に表示更新（DBから再取得してもよい）
+                  displayImage(event.target.result, "無題");
+                });
               };
               reader.readAsDataURL(file);
             }
           }
         }
 
-        function saveImage(imageData, name) {
-          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
-          images.push({ src: imageData, name: name, deleted: false });
-          localStorage.setItem("uploadedImages", JSON.stringify(images));
-        }
-
-        function loadImages() {
-          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
-          images.forEach(image => {
-            if (!image.deleted) {
-              displayImage(image.src, image.name);
-            }
+        // DBから画像をロードして表示
+        async function loadImages() {
+          const images = await getImages();
+          images.forEach((image) => {
+            displayImage(image.src, image.name, image.id);
           });
         }
 
-        function displayImage(imageData, imageName) {
+        // 画像の表示
+        function displayImage(imageData, imageName, id = null) {
           const imageBox = document.createElement("div");
           imageBox.classList.add("image-box");
 
@@ -185,7 +298,10 @@
           input.type = "text";
           input.value = imageName;
           input.addEventListener("change", function () {
-            updateImageName(imageData, input.value);
+            // id がある場合にDB更新
+            if (id !== null) {
+              updateImageNameInDB(id, input.value);
+            }
           });
 
           const deleteBtn = document.createElement("button");
@@ -193,7 +309,11 @@
           deleteBtn.classList.add("delete-btn");
           deleteBtn.addEventListener("click", function () {
             if (confirm("本当に削除しますか？")) {
-              logicalDeleteImage(imageData, imageBox);
+              if (id !== null) {
+                logicalDeleteImageInDB(id).then(() => {
+                  imageBox.remove();
+                });
+              }
             }
           });
 
@@ -201,23 +321,6 @@
           imageBox.appendChild(input);
           imageBox.appendChild(deleteBtn);
           imageContainer.appendChild(imageBox);
-        }
-
-        function updateImageName(imageData, newName) {
-          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
-          images = images.map(image =>
-            image.src === imageData ? { ...image, name: newName } : image
-          );
-          localStorage.setItem("uploadedImages", JSON.stringify(images));
-        }
-
-        function logicalDeleteImage(imageData, imageBox) {
-          let images = JSON.parse(localStorage.getItem("uploadedImages")) || [];
-          images = images.map(image =>
-            image.src === imageData ? { ...image, deleted: true } : image
-          );
-          localStorage.setItem("uploadedImages", JSON.stringify(images));
-          imageBox.remove();
         }
       });
     </script>
